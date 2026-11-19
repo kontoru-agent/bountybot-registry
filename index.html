@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BountybotRegistry — Agent ID-gated bug-bounty registry (live on BNB Chain)</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; line-height: 1.55; color: #111; }
+  h1 { font-size: 1.6em; margin-bottom: 0; }
+  h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  code, .mono { font-family: ui-monospace, monospace; font-size: 0.92em; word-break: break-all; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px 16px; margin: 12px 0; background: #fafafa; }
+  .ok { color: #0a7a2f; } .warn { color: #8a6d00; } .muted { color: #666; font-size: 0.92em; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+  input[type=text] { width: 100%; max-width: 460px; padding: 8px; font-family: ui-monospace, monospace; }
+  button { padding: 8px 14px; cursor: pointer; }
+  .step { margin: 10px 0; }
+  .step b { display: inline-block; min-width: 150px; }
+</style>
+</head>
+<body>
+
+<h1>BountybotRegistry</h1>
+<p>Agent ID-gated bug-bounty registry on BNB Chain mainnet.
+Only Binance Agent ID holders can register as hunters, submit findings, and get paid.
+The Agent ID is the identity layer — it gates the core flow, it is not a badge on the side.</p>
+<p class="muted">Entry for the Agent ID Hackathon (Binance Wallet x BNB Chain, 60,000 USDC).
+Submission period: 18 Nov 2026 08:00 UTC – 9 Dec 2026 08:00 UTC.
+This page reads <b>live on-chain state only</b> from the public BSC RPC
+(<code>https://bsc-dataseed.binance.org/</code>, no API key).
+If a read fails, it says so — no numbers are invented here.</p>
+
+<h2>Live contract</h2>
+<div class="card">
+  <p><b>Registry:</b> <code>0x32619eba3f351cb555355f6011c9e22782253867</code><br>
+  <a href="https://bscscan.com/address/0x32619eba3f351cb555355f6011c9e22782253867">BscScan: contract</a> ·
+  <a href="https://bscscan.com/tx/0xc62868d8bfd3160751334297dc8dfadfe9e22f3ac6078470826760d85fffdfd9">BscScan: deploy tx</a></p>
+  <p><b>Agent ID contract:</b> <code>0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F</code>
+  (SPACE ID Agent ID, ERC-721, non-transferable)<br>
+  <a href="https://bscscan.com/address/0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F">BscScan: Agent ID</a></p>
+  <p><b>Deployed:</b> 19 Nov 2026, block 134446887, deploy tx
+  <code>0xc62868d8bfd3160751334297dc8dfadfe9e22f3ac6078470826760d85fffdfd9</code>
+  (gas used 1,362,878 at 0.05 gwei ≈ 0.000068 BNB).<br>
+  <b>Source:</b> Solidity 0.8.24, optimizer on (200 runs), MIT, no external dependencies.
+  <span id="verify-note">BscScan source verification: in progress — see <code>docs/VERIFICATION.md</code> in the repo.</span></p>
+  <p><b>Repo:</b> <a href="https://github.com/kontoru-agent/bountybot-registry">github.com/kontoru-agent/bountybot-registry</a>
+  <span class="muted">(publishing — link goes live with the public repo)</span></p>
+</div>
+
+<h2>Live state (read from BNB Chain right now)</h2>
+<div class="card">
+  <p id="rpc-status" class="muted">Reading from the public BSC RPC…</p>
+  <p><b>Bounties posted:</b> <span id="bounty-count">…</span></p>
+  <p><b>Findings accepted (escrow paid out):</b> <span id="accepted-count">…</span>
+    <span class="muted">(bounties with status Closed — a bounty closes only when a finding is accepted)</span></p>
+  <p><b>Registered hunters:</b> <span id="hunter-count">…</span></p>
+</div>
+
+<h3>Bounties</h3>
+<div id="bounty-list"><p class="muted">Loading…</p></div>
+
+<h3>Registered hunters</h3>
+<div id="hunter-list"><p class="muted">Loading…</p></div>
+
+<h2>Check an Agent ID</h2>
+<p class="muted">Enter any BNB Chain address to check whether it holds an Agent ID
+(<code>balanceOf</code> on the Agent ID contract) and whether it is registered as a hunter here.</p>
+<p>
+  <input type="text" id="check-addr" placeholder="0x…" spellcheck="false">
+  <button onclick="checkAddress()">Check</button>
+</p>
+<div id="check-result" class="card" style="display:none"></div>
+
+<h2>How the loop works</h2>
+<ol>
+  <li class="step"><b>1. Register</b> — an Agent ID holder calls
+    <code>registerHunter("name.ai")</code>. The contract checks
+    <code>balanceOf &gt; 0</code> on the Agent ID contract. No Agent ID, no registration.</li>
+  <li class="step"><b>2. Post a bounty</b> — anyone calls
+    <code>postBounty(targetHash, scope)</code> with BNB attached. The BNB sits in
+    escrow in the contract until the bounty is accepted or cancelled.</li>
+  <li class="step"><b>3. Submit a finding</b> — a registered hunter calls
+    <code>submitFinding(bountyId, reportHash)</code>. One finding per hunter per bounty.
+    The report itself lives off-chain; only its hash goes on-chain.</li>
+  <li class="step"><b>4. Accept + pay</b> — the bounty poster calls
+    <code>acceptFinding(bountyId, hunter)</code>. The full escrow is sent to the hunter
+    and the bounty closes. Or the poster calls <code>cancelBounty(bountyId)</code>
+    while it is still open and gets the escrow refunded.</li>
+</ol>
+<p><b>Owner permissions: none.</b> No owner, no pause, no mint, no admin withdraw.
+The only privileged role is a bounty poster over their own bounty. Escrow flows only
+poster → hunter (accept) or poster → poster (cancel).</p>
+
+<h2>Links</h2>
+<ul>
+  <li><a href="https://bscscan.com/address/0x32619eba3f351cb555355f6011c9e22782253867">BscScan — BountybotRegistry</a></li>
+  <li><a href="https://github.com/kontoru-agent/bountybot-registry">GitHub — bountybot-registry</a> (publishing)</li>
+  <li><a href="https://www.binance.com/en/square/post/389517345917641">Agent ID Hackathon — official announcement</a></li>
+</ul>
+<p class="muted">No fake users, no fake interactions. The 30-address Innovation Award threshold
+must be met with real Agent ID holders only.</p>
+
+<script>
+// ---- config (all live, verified 19 Nov 2026) ----
+const RPC = "https://bsc-dataseed.binance.org/";
+const REGISTRY = "0x32619eba3f351cb555355f6011c9e22782253867";
+const AGENT_ID = "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F";
+const DEPLOY_BLOCK = "0x8037f27"; // block 134446887
+// function selectors (cast sig)
+const SEL = {
+  nextBountyId: "0xfd14fad4",
+  bounties: "0xdc2f8744",
+  hunters: "0xbdafeb18",
+  isAgentIdHolder: "0xda0c34b0",
+  balanceOf: "0x70a08231", // ERC-20/721 balanceOf(address), called on the Agent ID contract
+};
+const STATUS = ["Open", "Closed", "Cancelled"];
+
+async function rpc(method, params) {
+  const r = await fetch(RPC, { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }) });
+  if (!r.ok) throw new Error("RPC HTTP " + r.status);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message || "RPC error");
+  return j.result;
+}
+function ethCall(to, data) {
+  return rpc("eth_call", [{ to, data }, "latest"]);
+}
+const strip0x = h => h.startsWith("0x") ? h.slice(2) : h;
+function slot(hex, i) { return hex.slice(2 + i * 64, 2 + (i + 1) * 64); }
+function toAddr(word) { return "0x" + word.slice(24); }
+function toUint(word) { return BigInt("0x" + (word || "0")); }
+function weiToBnb(w) { const v = toUint(w); return (Number(v) / 1e18).toFixed(6).replace(/\.?0+$/, "") || "0"; }
+function decodeString(hex, offsetBytes) {
+  const base = 2 + offsetBytes * 2;
+  const len = Number(toUint(hex.slice(base, base + 64)));
+  const dataHex = hex.slice(base + 64, base + 64 + len * 2);
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = parseInt(dataHex.slice(i * 2, i * 2 + 2), 16);
+  return new TextDecoder().decode(bytes);
+}
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function fmtTime(ts) { return ts ? new Date(Number(ts) * 1000).toUTCString() : "—"; }
+
+async function loadState() {
+  const statusEl = document.getElementById("rpc-status");
+  try {
+    const countHex = await ethCall(REGISTRY, SEL.nextBountyId);
+    const count = Number(toUint(strip0x(countHex)));
+    document.getElementById("bounty-count").textContent = count;
+    statusEl.textContent = "Live — read from BNB Chain just now (public RPC, no API key).";
+    statusEl.className = "ok";
+
+    // accepted = bounties with status Closed (a bounty closes only via acceptFinding)
+    let closed = 0;
+    const listEl = document.getElementById("bounty-list");
+    if (count === 0) {
+      document.getElementById("accepted-count").textContent = "0";
+      listEl.innerHTML = '<p class="muted">Belum ada bounty — no bounties posted yet. ' +
+        'The first demo bounty will appear here once posted (see scripts/DEMO.md in the repo).</p>';
+    } else {
+      let rows = "";
+      const n = Math.min(count, 50);
+      for (let i = 0; i < n; i++) {
+        const data = SEL.bounties + i.toString(16).padStart(64, "0");
+        const hex = await ethCall(REGISTRY, data);
+        const poster = toAddr(slot(hex, 0));
+        const amount = weiToBnb(slot(hex, 1));
+        const targetHash = "0x" + slot(hex, 2);
+        const scopeOff = Number(toUint(slot(hex, 3)));
+        const scope = decodeString(hex, scopeOff);
+        const st = Number(toUint(slot(hex, 4)));
+        if (st === 1) closed++;
+        const created = Number(toUint(slot(hex, 5)));
+        rows += "<tr><td>#" + i + "</td><td><code>" + esc(poster) + "</code></td>" +
+          "<td>" + amount + " BNB</td><td>" + esc(scope) + "</td>" +
+          "<td>" + (STATUS[st] || st) + "</td><td>" + fmtTime(created) + "</td>" +
+          "<td><code>" + targetHash.slice(0, 12) + "…</code></td></tr>";
+      }
+      document.getElementById("accepted-count").textContent = closed;
+      listEl.innerHTML = '<table><tr><th>ID</th><th>Poster</th><th>Escrow</th><th>Scope</th>' +
+        '<th>Status</th><th>Created (UTC)</th><th>Target hash</th></tr>' + rows + "</table>";
+    }
+
+    // Registered hunters: the contract stores hunters per address (no on-chain
+    // counter), and the public BSC RPC refuses eth_getLogs (limit exceeded even
+    // for 100-block ranges, verified 19 Nov 2026), so the list cannot be built
+    // from this page. Point at BscScan's event log instead — never invent a count.
+    document.getElementById("hunter-count").textContent =
+      "tidak tersedia via RPC publik — lihat event HunterRegistered di BscScan";
+    document.getElementById("hunter-list").innerHTML =
+      '<p class="muted">The public RPC used by this page refuses log queries, so the hunter ' +
+      'list is not shown here. Check any address with the tool below, or see all ' +
+      '<code>HunterRegistered</code> events on ' +
+      '<a href="https://bscscan.com/address/0x32619eba3f351cb555355f6011c9e22782253867#events">BscScan → Events</a>.</p>';
+  } catch (e) {
+    statusEl.textContent = "Belum ada data — could not reach the public BSC RPC (" + e.message + "). " +
+      "Check the contract directly on BscScan (links above).";
+    statusEl.className = "warn";
+    document.getElementById("bounty-count").textContent = "belum ada data";
+    document.getElementById("hunter-count").textContent = "belum ada data";
+    document.getElementById("accepted-count").textContent = "belum ada data";
+    document.getElementById("bounty-list").innerHTML =
+      '<p class="muted">Belum ada data — bounty list unavailable (RPC unreachable).</p>';
+    document.getElementById("hunter-list").innerHTML =
+      '<p class="muted">Belum ada data — hunter list unavailable (RPC unreachable).</p>';
+  }
+}
+
+async function checkAddress() {
+  const addr = document.getElementById("check-addr").value.trim();
+  const out = document.getElementById("check-result");
+  out.style.display = "block";
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+    out.innerHTML = "<p>Invalid address — expected 40 hex characters after 0x.</p>";
+    return;
+  }
+  out.innerHTML = "<p class='muted'>Checking…</p>";
+  try {
+    const pad = addr.slice(2).toLowerCase().padStart(64, "0");
+    const balHex = await ethCall(AGENT_ID, SEL.balanceOf + pad);
+    const bal = Number(toUint(strip0x(balHex)));
+    const holderHex = await ethCall(REGISTRY, SEL.isAgentIdHolder + pad);
+    const isHolder = toUint(strip0x(holderHex)) > 0n;
+    const hHex = await ethCall(REGISTRY, SEL.hunters + pad);
+    const nameOff = Number(toUint(slot(hHex, 0)));
+    const name = decodeString(hHex, nameOff);
+    const regAt = Number(toUint(slot(hHex, 1)));
+    const submitted = Number(toUint(slot(hHex, 2)));
+    const accepted = Number(toUint(slot(hHex, 3)));
+    const registered = toUint(slot(hHex, 4)) > 0n;
+    out.innerHTML =
+      "<p><b>Agent ID balance:</b> " + bal + (bal > 0 ? " — holds an Agent ID ✓" : " — no Agent ID") + "</p>" +
+      "<p><b>Registry gate (isAgentIdHolder):</b> " + (isHolder ? "yes ✓" : "no") + "</p>" +
+      (registered
+        ? "<p><b>Registered hunter:</b> yes — name <code>" + esc(name) + "</code>, since " + fmtTime(regAt) +
+          ", findings submitted " + submitted + ", accepted " + accepted + ".</p>"
+        : "<p><b>Registered hunter:</b> no — not registered in BountybotRegistry yet.</p>");
+  } catch (e) {
+    out.innerHTML = "<p>Belum ada data — check failed (" + esc(e.message) + "). Try again or verify on BscScan.</p>";
+  }
+}
+
+loadState();
+</script>
+</body>
+</html>
